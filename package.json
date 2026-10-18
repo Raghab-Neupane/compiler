@@ -1,0 +1,11 @@
+{
+  "name": "genetic-compiler-project",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix ./@latest run dev",
+    "build": "npm --prefix ./@latest run build",
+    "lint": "npm --prefix ./@latest run lint",
+    "preview": "npm --prefix ./@latest run preview"
+  }
+}
