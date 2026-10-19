@@ -1,0 +1,15 @@
+#Ignore all the enviornments variables in the backend.
+.env
+.env.local
+.env.*.local
+!.env.example
+!.env.sample
+
+
+# Python virtual environment
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
