@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, Sparkles, RotateCcw, AlertTriangle, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Play, Sparkles, RotateCcw, AlertTriangle, CheckCircle2, XCircle, Loader2, Terminal } from 'lucide-react';
 
 interface ActionBarProps {
   onRun: () => void;
@@ -7,6 +7,9 @@ interface ActionBarProps {
   onReset: () => void;
   status: 'idle' | 'running' | 'optimizing';
   isStale: boolean;
+  language: 'python' | 'c';
+  canOptimize: boolean;
+  onLanguageChange: (lang: 'python' | 'c') => void;
   feedback?: {
     type: 'success' | 'error' | 'info';
     message: string;
@@ -15,9 +18,13 @@ interface ActionBarProps {
 
 export const ActionBar: React.FC<ActionBarProps> = ({
   onRun,
+  onOptimize,
   onReset,
   status,
   isStale,
+  language,
+  canOptimize,
+  onLanguageChange,
   feedback,
 }) => {
   const isBusy = status !== 'idle';
@@ -25,12 +32,28 @@ export const ActionBar: React.FC<ActionBarProps> = ({
   return (
     <div className="action-bar-container">
       <div className="action-buttons-group">
+        {/* Language Dropdown Selector */}
+        <div className="language-selector-wrapper" title="Select target programming language">
+          <Terminal size={13} className="language-icon" />
+          <select
+            id="language-dropdown"
+            className="language-select"
+            value={language}
+            onChange={(e) => onLanguageChange(e.target.value as 'python' | 'c')}
+            disabled={isBusy}
+            aria-label="Target language"
+          >
+            <option value="python">Python 3</option>
+            <option value="c">C (Clang)</option>
+          </select>
+        </div>
+
         <button
           type="button"
           className="btn-base btn-run"
           onClick={onRun}
           disabled={isBusy}
-          title="Send Python source code to FastAPI backend for execution"
+          title={`Send ${language === 'c' ? 'C' : 'Python'} source code to FastAPI backend for execution`}
         >
           {status === 'running' ? (
             <>
@@ -48,12 +71,12 @@ export const ActionBar: React.FC<ActionBarProps> = ({
         <button
           type="button"
           className="btn-base btn-optimize"
-          disabled={true}
-          style={{ opacity: 0.6, cursor: 'not-allowed', backgroundColor: '#e2e8f0', color: '#64748b' }}
-          title="Optimization backend (Genetic Algorithm & Intermediate TAC) is currently in development."
+            onClick={onOptimize}
+            disabled={isBusy || !canOptimize}
+            title={canOptimize ? 'Run the LLVM IR genetic optimizer on the latest C compilation' : 'Run the current C source successfully before optimizing'}
         >
           <Sparkles size={14} />
-          Optimize Code (Backend Pending)
+            {status === 'optimizing' ? 'Optimizing...' : 'Optimize Code'}
         </button>
 
         <button
@@ -61,7 +84,7 @@ export const ActionBar: React.FC<ActionBarProps> = ({
           className="btn-base btn-reset"
           onClick={onReset}
           disabled={isBusy}
-          title="Reset editor to default code and clear results"
+          title={`Reset editor to default ${language === 'c' ? 'C' : 'Python'} code and clear results`}
         >
           <RotateCcw size={13} />
           Reset
@@ -70,7 +93,7 @@ export const ActionBar: React.FC<ActionBarProps> = ({
 
       <div className="action-bar-feedback">
         {isStale && !isBusy && (
-          <div className="feedback-stale" title="Source code or test cases were modified since the last execution.">
+          <div className="feedback-stale" title="Source code or language was modified since the last execution.">
             <AlertTriangle size={13} />
             <span>Code changed (previous execution stale)</span>
           </div>

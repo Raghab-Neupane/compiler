@@ -1,5 +1,5 @@
 import React from 'react';
-import { Terminal, Check, X, Clock, AlertCircle, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Terminal, Clock, AlertCircle, AlertTriangle, ShieldCheck, Hash } from 'lucide-react';
 import type { RunResponse, OptimizeResponse } from '../types/compiler';
 
 interface OutputConsoleProps {
@@ -7,6 +7,7 @@ interface OutputConsoleProps {
   optimizeResult: OptimizeResponse | null;
   isStale: boolean;
   status: 'idle' | 'running' | 'optimizing';
+  language?: 'python' | 'c';
 }
 
 export const OutputConsole: React.FC<OutputConsoleProps> = ({
@@ -14,40 +15,42 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
   optimizeResult,
   isStale,
   status,
+  language = 'python',
 }) => {
   const hasResult = Boolean(runResult || optimizeResult);
 
   const activeResult = runResult
     ? {
+        pId: runResult.p_id,
+        message: runResult.message,
         status: runResult.status,
-        stdout: runResult.stdout,
+        stdout: runResult.stdout || runResult.output || '',
         stderr: runResult.stderr,
         exitCode: runResult.exit_code,
         executionTime: runResult.execution_time_ms,
-        testsPassed: runResult.tests_passed,
-        testsTotal: runResult.tests_total,
-        testResults: runResult.test_results || [],
-        source: 'Python Backend Execution',
+        source: `FastAPI Backend (${(runResult.language || language).toUpperCase()})`,
         errorMessage: runResult.error_message,
-        isTimeout: runResult.status === 'timeout',
+        isTimeout: runResult.status === 'timeout' || runResult.status === 'compile_timeout',
       }
     : optimizeResult
     ? {
+        pId: undefined,
+        message: undefined,
         status: optimizeResult.status,
         stdout: optimizeResult.optimized_stdout || optimizeResult.original_stdout,
-        stderr: optimizeResult.error_message ? optimizeResult.error_message : '',
-        exitCode: 0,
+        stderr: optimizeResult.optimized_stderr || optimizeResult.error_message || '',
+        exitCode: optimizeResult.optimized_exit_code ?? optimizeResult.original_exit_code ?? -1,
         executionTime: optimizeResult.optimized_execution_time_ms,
-        testsPassed: optimizeResult.tests_passed,
-        testsTotal: optimizeResult.tests_total,
-        testResults: optimizeResult.test_results || [],
         source: 'Optimized Run',
         errorMessage: optimizeResult.error_message,
         isTimeout: false,
       }
     : null;
 
-  const isSuccess = activeResult?.status === 'success' && activeResult.exitCode === 0;
+  const isSuccess =
+    (activeResult?.status === 'completed' || activeResult?.status === 'success') &&
+    activeResult.exitCode === 0 &&
+    !activeResult.isTimeout;
   const isTimeout = activeResult?.isTimeout;
   const hasError = !isSuccess;
 
@@ -90,8 +93,8 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
                 : isTimeout
                 ? 'Timed Out'
                 : isSuccess
-                ? 'Success'
-                : 'Execution Error'}
+                ? 'Completed'
+                : 'Failed'}
             </span>
           )}
         </div>
@@ -102,23 +105,23 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
           <div className="console-output-box">
             <span className="console-empty-text">
               {status === 'running'
-                ? 'Sending source code to FastAPI backend and executing with Python 3...'
+                ? `Sending ${language === 'c' ? 'C' : 'Python'} code to FastAPI backend (/execute) and running...`
                 : 'Processing request...'}
             </span>
           </div>
         ) : !activeResult ? (
           <div className="console-output-box">
             <span className="console-empty-text">
-              Press <strong>Run Code</strong> to execute your Python program on the backend and view actual stdout.
+              Press <strong>Run Code</strong> to execute your {language === 'c' ? 'C' : 'Python'} program on the backend and view actual output.
             </span>
           </div>
         ) : (
           <>
             <div className="console-meta-bar">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                 <span className="meta-timing">
                   <Clock size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: -1 }} />
-                  Duration: {activeResult.executionTime.toFixed(2)} ms
+                  Duration: {activeResult.executionTime} ms
                 </span>
 
                 <span
@@ -130,13 +133,14 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
                 >
                   Exit code: {activeResult.exitCode}
                 </span>
-              </div>
 
-              {activeResult.testsTotal > 0 && (
-                <span className="meta-timing">
-                  Tests: {activeResult.testsPassed} / {activeResult.testsTotal} passed
-                </span>
-              )}
+                {activeResult.pId && (
+                  <span className="meta-timing" title={`Job UUID: ${activeResult.pId}`}>
+                    <Hash size={11} style={{ display: 'inline', marginRight: 2, verticalAlign: -1 }} />
+                    Job ID: <code style={{ fontSize: '11px', padding: '1px 5px', background: 'var(--bg-subtle)' }}>{activeResult.pId.slice(0, 8)}...</code>
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Standard Output and Error Box */}
@@ -163,46 +167,7 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
             {isTimeout && (
               <div className="feedback-error">
                 <AlertTriangle size={13} />
-                <span>Execution was terminated because it exceeded the 5.0 second timeout limit.</span>
-              </div>
-            )}
-
-            {/* Test Results Breakdown */}
-            {activeResult.testResults && activeResult.testResults.length > 0 && (
-              <div className="console-tests-area">
-                <span className="console-tests-title">Test Results Breakdown</span>
-                {activeResult.testResults.map((tr, idx) => (
-                  <div
-                    key={tr.id || idx}
-                    className={`test-result-row ${tr.passed ? 'passed' : 'failed'}`}
-                  >
-                    <div className="test-result-info">
-                      {tr.passed ? (
-                        <Check size={14} color="var(--success-color)" />
-                      ) : (
-                        <X size={14} color="var(--danger-color)" />
-                      )}
-                      <span>Test Case #{idx + 1}</span>
-                      <span
-                        className={`test-result-badge ${
-                          tr.passed ? 'passed' : 'failed'
-                        }`}
-                      >
-                        {tr.passed ? 'PASS' : 'FAIL'}
-                      </span>
-                    </div>
-
-                    <div className="test-result-outputs">
-                      <span title="Expected output">
-                        Expected: {JSON.stringify(tr.expected_output)}
-                      </span>
-                      <span>|</span>
-                      <span title="Actual output">
-                        Actual: {JSON.stringify(tr.actual_output)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                <span>Execution was terminated because it exceeded the timeout limit.</span>
               </div>
             )}
 

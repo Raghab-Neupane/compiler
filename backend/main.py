@@ -1,15 +1,14 @@
 import os
-import sys
-import time
 import shutil
+import sys
 import tempfile
-import threading
-import subprocess
-from typing import Optional
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
+
+from app.limited_process import run_limited_process
+from app.routes import router as compiler_router
 
 # ---------------------------------------------------------
 # Configuration Constants
@@ -37,6 +36,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
+app.include_router(compiler_router)
 
 
 # ---------------------------------------------------------
@@ -88,121 +88,56 @@ def execute_python_code(source_code: str, timeout_sec: float = TIMEOUT_SECONDS) 
     script_path = os.path.join(temp_dir, "submission.py")
 
     try:
-        # Write exact source code without modification
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(source_code)
-
-        stdout_buf = bytearray()
-        stderr_buf = bytearray()
-        output_limit_exceeded = threading.Event()
-
-        def stream_reader(pipe, buf: bytearray):
-            try:
-                while True:
-                    chunk = pipe.read(4096)
-                    if not chunk:
-                        break
-                    if len(buf) < MAX_OUTPUT_BYTES:
-                        remaining = MAX_OUTPUT_BYTES - len(buf)
-                        buf.extend(chunk[:remaining])
-                    if len(buf) >= MAX_OUTPUT_BYTES:
-                        output_limit_exceeded.set()
-                        break
-            except Exception:
-                pass
-            finally:
-                try:
-                    pipe.close()
-                except Exception:
-                    pass
-
-        start_time = time.perf_counter()
-
-        # Launch unbuffered Python process using sys.executable
-        proc = subprocess.Popen(
-            [sys.executable, "-u", script_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+        result = run_limited_process(
+            [sys.executable, "-I", "-u", script_path],
             cwd=temp_dir,
+            timeout_seconds=timeout_sec,
+            max_output_bytes=MAX_OUTPUT_BYTES,
         )
+        execution_time_ms = round(result["execution_time_ms"], 2)
 
-        t_out = threading.Thread(target=stream_reader, args=(proc.stdout, stdout_buf), daemon=True)
-        t_err = threading.Thread(target=stream_reader, args=(proc.stderr, stderr_buf), daemon=True)
-        t_out.start()
-        t_err.start()
-
-        timed_out = False
-        poll_interval = 0.05
-
-        while True:
-            retcode = proc.poll()
-            elapsed = time.perf_counter() - start_time
-
-            if retcode is not None:
-                # Process finished
-                break
-
-            if elapsed >= timeout_sec:
-                timed_out = True
-                try:
-                    proc.kill()
-                    proc.wait(timeout=1.0)
-                except Exception:
-                    pass
-                break
-
-            if output_limit_exceeded.is_set():
-                try:
-                    proc.kill()
-                    proc.wait(timeout=1.0)
-                except Exception:
-                    pass
-                break
-
-            time.sleep(poll_interval)
-
-        end_time = time.perf_counter()
-        execution_time_ms = round((end_time - start_time) * 1000, 2)
-
-        # Allow threads to finalize remaining reads
-        t_out.join(timeout=0.3)
-        t_err.join(timeout=0.3)
-
-        decoded_stdout = stdout_buf.decode("utf-8", errors="replace")
-        decoded_stderr = stderr_buf.decode("utf-8", errors="replace")
-
-        if timed_out:
+        if result["timed_out"]:
             timeout_msg = f"Execution timed out after {timeout_sec:.1f} seconds."
-            full_stderr = f"{decoded_stderr}\n{timeout_msg}".strip() if decoded_stderr else timeout_msg
+            full_stderr = (
+                f"{result['stderr']}\n{timeout_msg}".strip()
+                if result["stderr"]
+                else timeout_msg
+            )
             return RunResponse(
                 status="timeout",
                 language="python",
-                stdout=decoded_stdout,
+                stdout=result["stdout"],
                 stderr=full_stderr,
                 exit_code=-1,
                 execution_time_ms=execution_time_ms,
             )
 
-        if output_limit_exceeded.is_set():
+        if result["output_limited"]:
             limit_msg = f"Output limit of {MAX_OUTPUT_BYTES // 1024} KB exceeded. Process terminated."
-            full_stderr = f"{decoded_stderr}\n{limit_msg}".strip() if decoded_stderr else limit_msg
+            full_stderr = (
+                f"{result['stderr']}\n{limit_msg}".strip()
+                if result["stderr"]
+                else limit_msg
+            )
             return RunResponse(
                 status="error",
                 language="python",
-                stdout=decoded_stdout,
+                stdout=result["stdout"],
                 stderr=full_stderr,
                 exit_code=-1,
                 execution_time_ms=execution_time_ms,
             )
 
-        exit_code = proc.returncode if proc.returncode is not None else 0
+        exit_code = result["exit_code"]
         run_status = "success" if exit_code == 0 else "error"
 
         return RunResponse(
             status=run_status,
             language="python",
-            stdout=decoded_stdout,
-            stderr=decoded_stderr,
+            stdout=result["stdout"],
+            stderr=result["stderr"],
             exit_code=exit_code,
             execution_time_ms=execution_time_ms,
         )

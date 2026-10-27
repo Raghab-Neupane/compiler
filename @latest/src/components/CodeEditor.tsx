@@ -6,14 +6,20 @@ interface CodeEditorProps {
   code: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  language: 'python' | 'c';
 }
 
 export const CodeEditor: React.FC<CodeEditorProps> = ({
   code,
   onChange,
   disabled = false,
+  language = 'python',
 }) => {
   const lineCount = (code || '').split('\n').length;
+  const fileName = language === 'c' ? 'main.c' : 'main.py';
+  const langLabel = language === 'c' ? 'C' : 'Python';
+  const monacoLang = language === 'c' ? 'c' : 'python';
+  const compilerStandard = language === 'c' ? 'C11 (Clang)' : 'Python 3.10+';
 
   return (
     <div className="panel-card">
@@ -21,9 +27,9 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
         <div className="panel-title-area">
           <span className="panel-title">
             <FileCode size={15} />
-            main.py
+            {fileName}
           </span>
-          <span className="panel-badge">Python</span>
+          <span className="panel-badge">{langLabel}</span>
         </div>
         <div className="panel-actions">
           <span className="panel-badge" title="Line count">
@@ -35,7 +41,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       <div className="editor-wrapper">
         <Editor
           height="100%"
-          language="python"
+          language={monacoLang}
           theme="vs"
           value={code}
           onChange={(val) => onChange(val || '')}
@@ -64,7 +70,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           loading={
             <div className="tac-empty-state">
               <Code2 size={24} />
-              <span className="tac-empty-title">Loading Python Editor...</span>
+              <span className="tac-empty-title">Loading {langLabel} Editor...</span>
             </div>
           }
         />
@@ -73,7 +79,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       <div className="editor-footer">
         <span>UTF-8</span>
         <span>Spaces: 4</span>
-        <span>Python 3.10+</span>
+        <span>{compilerStandard}</span>
       </div>
     </div>
   );

@@ -24,9 +24,9 @@ export const OptimizationMetrics: React.FC<OptimizationMetricsProps> = ({
         </div>
         <div className="tac-empty-state">
           <Clock size={24} />
-          <span className="tac-empty-title">Optimization Backend Pending</span>
+          <span className="tac-empty-title">LLVM optimization results</span>
           <span className="tac-empty-desc">
-            Comparative benchmarks and execution speedups will display here once the Genetic Algorithm optimization backend is implemented.
+          Run a C compilation, then optimize it to view measured compiler results.
           </span>
         </div>
       </div>
@@ -37,16 +37,23 @@ export const OptimizationMetrics: React.FC<OptimizationMetricsProps> = ({
     original_execution_time_ms,
     optimized_execution_time_ms,
     time_improvement_percent,
-    original_instruction_count,
-    optimized_instruction_count,
     code_size_reduction_percent,
     tests_passed,
     tests_total,
     simulation,
+    equivalent,
+    original_binary_size,
+    optimized_binary_size,
   } = optimizeResult;
 
-  const isTimeImproved = time_improvement_percent > 0;
-  const isSizeReduced = code_size_reduction_percent > 0;
+  const isTimeImproved = (time_improvement_percent ?? 0) > 0;
+  const isSizeReduced = (code_size_reduction_percent ?? 0) > 0;
+  const isTimeSlower = (time_improvement_percent ?? 0) < 0;
+  const isSizeLarger = (code_size_reduction_percent ?? 0) < 0;
+  const verificationPassed =
+    equivalent === true
+    && (tests_total ?? 0) > 0
+    && tests_passed === tests_total;
 
   return (
     <div className="panel-card">
@@ -56,9 +63,9 @@ export const OptimizationMetrics: React.FC<OptimizationMetricsProps> = ({
             <BarChart3 size={15} />
             Optimization Metrics
           </span>
-          {simulation && (
-            <span className="panel-badge simulated" title="These benchmark values are simulated by the mock compiler">
-              Simulated result
+          {optimizeResult.status === 'success' && (
+            <span className="panel-badge">
+              {equivalent ? 'Equivalent' : 'Not verified'}
             </span>
           )}
           {isStale && (
@@ -75,43 +82,55 @@ export const OptimizationMetrics: React.FC<OptimizationMetricsProps> = ({
           <div className="metric-card">
             <span className="metric-label">Execution Time</span>
             <div className="metric-value">
-              {optimized_execution_time_ms.toFixed(1)}
+              {optimized_execution_time_ms?.toFixed(2) ?? '—'}
               <span className="metric-unit">ms</span>
             </div>
             <div
               className={`metric-diff ${
-                isTimeImproved ? 'positive' : 'neutral'
+                isTimeImproved ? 'positive' : isTimeSlower ? 'negative' : 'neutral'
               }`}
             >
               <TrendingDown size={12} />
               <span>
-                {isTimeImproved ? `${time_improvement_percent.toFixed(1)}% faster` : 'No speedup'}
+                {time_improvement_percent === null
+                  ? 'Not measured'
+                  : isTimeImproved
+                  ? `${time_improvement_percent.toFixed(1)}% faster`
+                  : isTimeSlower
+                  ? `${Math.abs(time_improvement_percent).toFixed(1)}% slower`
+                  : 'No change'}
               </span>
             </div>
             <span className="metric-subinfo">
-              Original: {original_execution_time_ms.toFixed(1)} ms
+              Original: {original_execution_time_ms?.toFixed(2) ?? '—'} ms
             </span>
           </div>
 
           {/* TAC Instructions Count */}
           <div className="metric-card">
-            <span className="metric-label">TAC Instructions</span>
+            <span className="metric-label">Native Binary Size</span>
             <div className="metric-value">
-              {optimized_instruction_count}
-              <span className="metric-unit">ops</span>
+              {optimized_binary_size ?? '—'}
+              <span className="metric-unit">bytes</span>
             </div>
             <div
               className={`metric-diff ${
-                isSizeReduced ? 'positive' : 'neutral'
+                isSizeReduced ? 'positive' : isSizeLarger ? 'negative' : 'neutral'
               }`}
             >
               <Code size={12} />
               <span>
-                {isSizeReduced ? `${code_size_reduction_percent.toFixed(1)}% reduction` : '0% change'}
+                {code_size_reduction_percent === null
+                  ? 'Not measured'
+                  : isSizeReduced
+                  ? `${code_size_reduction_percent.toFixed(1)}% reduction`
+                  : isSizeLarger
+                  ? `${Math.abs(code_size_reduction_percent).toFixed(1)}% larger`
+                  : 'No change'}
               </span>
             </div>
             <span className="metric-subinfo">
-              Original: {original_instruction_count} ops
+              Original: {original_binary_size ?? '—'} bytes
             </span>
           </div>
 
@@ -119,19 +138,25 @@ export const OptimizationMetrics: React.FC<OptimizationMetricsProps> = ({
           <div className="metric-card">
             <span className="metric-label">Verification</span>
             <div className="metric-value">
-              {tests_passed} / {tests_total}
+              {(tests_total ?? 0) > 0 ? `${tests_passed ?? 0} / ${tests_total}` : '—'}
               <span className="metric-unit">passed</span>
             </div>
-            <div className="metric-diff positive">
-              <CheckCircle size={12} />
+            <div
+              className={`metric-diff ${
+                verificationPassed ? 'positive' : equivalent === false ? 'negative' : 'neutral'
+              }`}
+            >
+              {verificationPassed ? <CheckCircle size={12} /> : <Info size={12} />}
               <span>
-                {tests_total > 0 && tests_passed === tests_total
+                {verificationPassed
                   ? 'All tests passing'
-                  : `${tests_passed} tests passed`}
+                  : equivalent === false
+                  ? 'Equivalence failed'
+                  : 'Not verified'}
               </span>
             </div>
             <span className="metric-subinfo">
-              Semantic equivalence checked
+              {verificationPassed ? 'Outputs and exit codes matched' : 'No verified comparison'}
             </span>
           </div>
         </div>
